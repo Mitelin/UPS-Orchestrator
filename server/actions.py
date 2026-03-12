@@ -3,6 +3,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 from server.config import CriticalShutdownConfig, LocalServerActionConfig
 
@@ -49,19 +50,8 @@ class LocalActionRunner:
         self._shutdown_config = shutdown_config
         self._command_runner = command_runner or LocalCommandRunner()
 
-    def enter_eco_mode(self) -> LocalActionResult:
-        return LocalActionResult(
-            action="enter_local_eco_mode",
-            accepted=True,
-            message="Server eco mode placeholder executed.",
-        )
-
-    def exit_eco_mode(self) -> LocalActionResult:
-        return LocalActionResult(
-            action="exit_local_eco_mode",
-            accepted=True,
-            message="Server eco mode exit placeholder executed.",
-        )
+    def should_execute_shutdown(self) -> bool:
+        return self._local_config.self_shutdown_enabled
 
     def build_critical_shutdown_plan(self) -> CriticalShutdownPlan:
         steps = [
@@ -127,6 +117,43 @@ class LocalActionRunner:
         message = stdout or stderr or "Server self-shutdown command executed."
         return LocalActionResult(
             action="schedule_local_shutdown",
+            accepted=accepted,
+            message=message,
+        )
+
+    def run_pre_shutdown_script(self, execute: bool = False) -> LocalActionResult:
+        if not self._local_config.pre_shutdown_script_enabled:
+            return LocalActionResult(
+                action="run_pre_shutdown_script",
+                accepted=True,
+                message="Server pre-shutdown script is disabled.",
+            )
+
+        script_path = Path(self._local_config.pre_shutdown_script_path)
+        if not execute:
+            return LocalActionResult(
+                action="run_pre_shutdown_script",
+                accepted=True,
+                message=f"Server pre-shutdown script planned: {script_path}",
+            )
+
+        if not script_path.exists():
+            return LocalActionResult(
+                action="run_pre_shutdown_script",
+                accepted=False,
+                message=f"Server pre-shutdown script not found: {script_path}",
+            )
+
+        completed = self._command_runner.run(
+            ["/bin/sh", str(script_path)],
+            timeout_seconds=self._local_config.pre_shutdown_script_timeout_seconds,
+        )
+        accepted = completed.returncode == 0
+        stderr = completed.stderr.strip()
+        stdout = completed.stdout.strip()
+        message = stdout or stderr or "Server pre-shutdown script executed."
+        return LocalActionResult(
+            action="run_pre_shutdown_script",
             accepted=accepted,
             message=message,
         )

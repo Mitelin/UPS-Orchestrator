@@ -33,6 +33,9 @@ low_battery_debounce_polls = 2
 [local_server_actions]
 self_shutdown_enabled = false
 self_shutdown_command = "sudo /sbin/shutdown -h now"
+pre_shutdown_script_enabled = false
+pre_shutdown_script_path = "./scripts/pre-shutdown.sh"
+pre_shutdown_script_timeout_seconds = 30.0
 
 [critical_shutdown]
 include_windows_client_shutdown = false

@@ -29,6 +29,9 @@ class ServerConfigTests(unittest.TestCase):
                 "[nut_monitor]\n"
                 "enabled = true\n"
                 "power_state_debounce_polls = 2\n"
+                "[local_server_actions]\n"
+                "pre_shutdown_script_enabled = true\n"
+                "pre_shutdown_script_path = \"./scripts/pre-shutdown.sh\"\n"
                 "[nas]\n"
                 "enabled = true\n"
                 "host = \"nas.local\"\n",
@@ -47,6 +50,8 @@ class ServerConfigTests(unittest.TestCase):
             self.assertEqual("http://main-pc.local:8765", config.windows_client.base_url)
             self.assertTrue(config.nut_monitor.enabled)
             self.assertEqual(2, config.nut_monitor.power_state_debounce_polls)
+            self.assertTrue(config.local_server_actions.pre_shutdown_script_enabled)
+            self.assertEqual("./scripts/pre-shutdown.sh", config.local_server_actions.pre_shutdown_script_path)
             self.assertTrue(config.nas.enabled)
             self.assertEqual("nas.local", config.nas.host)
 
@@ -70,6 +75,7 @@ class ServerConfigTests(unittest.TestCase):
                     "UPS_ORCHESTRATOR_DISPATCH_RETRY_ATTEMPTS": "3",
                     "UPS_ORCHESTRATOR_WINDOWS_CLIENT_ENABLED": "true",
                     "UPS_ORCHESTRATOR_AUDIT_JOURNAL_ENABLED": "true",
+                    "UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_ENABLED": "true",
                 },
                 clear=False,
             ):
@@ -79,6 +85,7 @@ class ServerConfigTests(unittest.TestCase):
             self.assertEqual(3, config.dispatch_runtime.retry_attempts)
             self.assertTrue(config.windows_client.enabled)
             self.assertTrue(config.audit_journal.enabled)
+            self.assertTrue(config.local_server_actions.pre_shutdown_script_enabled)
 
     def test_load_without_file_uses_defaults_and_env(self) -> None:
         with patch.dict(

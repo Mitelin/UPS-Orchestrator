@@ -12,7 +12,7 @@ from server.journal import AuditJournal
 from server.policy_engine import PowerPolicyEngine
 from server.runtime import OrchestratorRuntime
 from server.state_manager import OrchestratorStateManager
-from server.ups_monitor import NUTUPSMonitor
+from server.ups_monitor import NUTUPSMonitor, UPSStatusSnapshot
 from shared.models import UPSPowerEvent
 
 
@@ -74,6 +74,8 @@ def main() -> int:
     state_manager = OrchestratorStateManager(commit_marker_path)
     action_runner = LocalActionRunner(config.local_server_actions, config.critical_shutdown)
     journal = AuditJournal(config.audit_journal)
+
+    _reconcile_startup_commit_state(config, state_manager, journal)
 
     if args.command == "status":
         logging.info("state=%s committed=%s", state_manager.state.value, state_manager.committed)
@@ -252,6 +254,49 @@ def main() -> int:
                 step.description,
             )
     return 0
+
+
+def _reconcile_startup_commit_state(
+    config: ServerConfig,
+    state_manager: OrchestratorStateManager,
+    journal: AuditJournal,
+) -> None:
+    if not state_manager.committed:
+        return
+    if not config.nut_monitor.enabled:
+        return
+
+    try:
+        snapshot = NUTUPSMonitor(config.nut_monitor, timeout_seconds=config.dispatch_runtime.timeout_seconds).read_snapshot()
+    except RuntimeError as error:
+        logging.warning("startup_reconcile committed_state_retained reason=%s", error)
+        journal.record_runtime_event("startup_reconcile_retained", reason=str(error), committed=True)
+        return
+
+    if _snapshot_is_all_clear(snapshot):
+        state_manager.clear_commit()
+        logging.info("startup_reconcile committed_state_cleared ups_status=%s", " ".join(snapshot.status_tokens) or "unknown")
+        journal.record_runtime_event(
+            "startup_reconcile_cleared",
+            committed=False,
+            ups_status=" ".join(snapshot.status_tokens),
+            battery_charge_percent=snapshot.battery_charge_percent,
+            runtime_seconds=snapshot.runtime_seconds,
+        )
+        return
+
+    logging.info("startup_reconcile committed_state_retained ups_status=%s", " ".join(snapshot.status_tokens) or "unknown")
+    journal.record_runtime_event(
+        "startup_reconcile_retained",
+        committed=True,
+        ups_status=" ".join(snapshot.status_tokens),
+        battery_charge_percent=snapshot.battery_charge_percent,
+        runtime_seconds=snapshot.runtime_seconds,
+    )
+
+
+def _snapshot_is_all_clear(snapshot: UPSStatusSnapshot) -> bool:
+    return snapshot.online and not snapshot.on_battery and not snapshot.low_battery
 
 
 if __name__ == "__main__":

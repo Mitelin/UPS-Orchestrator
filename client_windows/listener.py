@@ -53,8 +53,8 @@ class WindowsClientListener:
     ) -> None:
         self._config = config
         self._state_manager = state_manager
-        self._power_actions = power_actions or PowerActionRunner()
-        self._notifications = notifications or NotificationService()
+        self._power_actions = power_actions or PowerActionRunner(config)
+        self._notifications = notifications or NotificationService(config)
         self._logger = logging.getLogger(__name__)
 
     def handle_event(self, event: UPSPowerEvent, token: str, source_host: str) -> ListenerResponse:
@@ -90,6 +90,7 @@ class WindowsClientListener:
                         self._power_actions.schedule_shutdown(
                             delay_seconds=self._config.lowbatt_shutdown_delay_seconds,
                             command=self._config.shutdown_command,
+                            execute=self._config.execute_platform_actions,
                         )
                     )
                 )

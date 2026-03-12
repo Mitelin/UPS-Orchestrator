@@ -43,22 +43,21 @@ class PowerPolicyEngine:
         shutdown_plan: CriticalShutdownPlan | None = None
 
         if transition.changed and transition.current_state.value == "ON_BATTERY":
-            actions.extend(["notify_clients_onbatt", "enter_local_eco_mode"])
-            if self._action_runner:
-                local_results.append(self._action_runner.enter_eco_mode())
+            actions.extend(["notify_clients_onbatt"])
         elif transition.current_state.value == "CRITICAL_SHUTDOWN":
-            actions.extend(["notify_clients_lowbatt", "start_ordered_shutdown"])
+            actions.extend(["notify_clients_lowbatt", "start_ordered_shutdown", "run_pre_shutdown_script"])
             if self._action_runner:
                 shutdown_plan = self._action_runner.build_critical_shutdown_plan()
+                execute_shutdown = self._action_runner.should_execute_shutdown()
+                local_results.append(self._action_runner.run_pre_shutdown_script(execute=execute_shutdown))
                 local_results.append(
                     self._action_runner.schedule_shutdown(
                         delay_seconds=shutdown_plan.steps[-1].delay_seconds,
+                        execute=execute_shutdown,
                     )
                 )
         elif transition.changed and transition.current_state.value == "NORMAL":
-            actions.extend(["notify_clients_online", "exit_local_eco_mode"])
-            if self._action_runner:
-                local_results.append(self._action_runner.exit_eco_mode())
+            actions.extend(["notify_clients_online"])
 
         if self._dispatcher and (
             any(action.startswith("notify_clients_") for action in actions)

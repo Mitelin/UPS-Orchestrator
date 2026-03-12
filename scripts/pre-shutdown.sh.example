@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# Example custom pre-shutdown hook for UPS-Orchestrator.
+# Copy or adapt this file to scripts/pre-shutdown.sh and add your own commands.
+
+set -eu
+
+echo "[pre-shutdown] Starting custom application shutdown sequence"
+
+# Example: save a game server before stop.
+# screen -S minecraft -p 0 -X stuff "save-all$(printf '\r')"
+# sleep 3
+# screen -S minecraft -p 0 -X stuff "stop$(printf '\r')"
+
+# Example: stop a systemd service in custom order.
+# systemctl stop my-custom-app.service
+
+# Example: flush application data.
+# /opt/my-app/bin/flush-state --graceful
+
+echo "[pre-shutdown] Custom shutdown sequence finished"

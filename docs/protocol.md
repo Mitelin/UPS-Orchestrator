@@ -80,13 +80,13 @@ All event endpoints accept the same JSON envelope.
 
 ### `POST /onbatt`
 Expected behavior:
-- enable local eco mode
+- enable local eco mode when enabled by local Windows client policy
 - show user warning
 - mark client state as on battery
 
 ### `POST /online`
 Expected behavior:
-- restore normal mode only if critical shutdown is not pending
+- restore the previously active Windows power plan only if critical shutdown is not pending
 - clear warning state where possible
 
 ### `POST /lowbatt`
@@ -136,6 +136,12 @@ Example ignored response:
 - the Windows client should log repeated `event_id` values
 - repeated `ONBATT` should be safe to ignore
 - `ONLINE` after local critical shutdown pending must be ignored
+
+## Client recovery note
+
+The Windows client may persist the previously active Windows power plan when entering eco mode.
+
+If the machine restarts before `ONLINE` is received, the client may restore that saved plan during its next startup before continuing normal listener operation.
 
 ## Logging requirements
 Both sides must log:

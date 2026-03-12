@@ -6,6 +6,7 @@ from typing import Any
 
 from client_windows.config import WindowsClientConfig
 from client_windows.listener import WindowsClientListener
+from client_windows.power_actions import PowerActionRunner
 from client_windows.state_manager import WindowsClientStateManager
 from shared.models import EventEnvelope
 from shared.models import UPSPowerEvent
@@ -57,9 +58,12 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     config = build_config(args)
-    listener = WindowsClientListener(config=config, state_manager=WindowsClientStateManager())
+    power_actions = PowerActionRunner(config)
+    listener = WindowsClientListener(config=config, state_manager=WindowsClientStateManager(), power_actions=power_actions)
 
     if args.command == "serve":
+        startup_result = power_actions.reconcile_startup_state()
+        logging.info("startup_action action=%s accepted=%s message=%s", startup_result.action, startup_result.accepted, startup_result.message)
         server = listener.create_http_server()
         logging.info("listening on %s:%s", config.bind_host, config.bind_port)
         try:
@@ -79,9 +83,15 @@ def main() -> int:
         bind_port=config.bind_port,
         shared_token=config.shared_token,
         allowed_hosts={args.source_host},
+        execute_platform_actions=config.execute_platform_actions,
         onbatt_warning_message=config.onbatt_warning_message,
         lowbatt_warning_message=config.lowbatt_warning_message,
         online_info_message=config.online_info_message,
+        notification_title=config.notification_title,
+        eco_mode_enabled=config.eco_mode_enabled,
+        eco_mode_power_saver_guid=config.eco_mode_power_saver_guid,
+        eco_mode_balanced_guid=config.eco_mode_balanced_guid,
+        eco_mode_restore_scheme_path=config.eco_mode_restore_scheme_path,
         lowbatt_shutdown_enabled=config.lowbatt_shutdown_enabled,
         lowbatt_shutdown_delay_seconds=config.lowbatt_shutdown_delay_seconds,
         shutdown_command=config.shutdown_command,

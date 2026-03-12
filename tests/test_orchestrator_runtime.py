@@ -5,9 +5,12 @@ import logging
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from server.actions import LocalActionRunner
-from server.config import CriticalShutdownConfig, LocalServerActionConfig
+from server.config import AuditJournalConfig, CriticalShutdownConfig, LocalServerActionConfig, ServerConfig
+from server.journal import AuditJournal
+from server.main import _reconcile_startup_commit_state
 from server.runtime import OrchestratorRuntime
 from server.state_manager import OrchestratorStateManager
 from server.ups_monitor import UPSObservedEvent, UPSStatusSnapshot
@@ -75,7 +78,7 @@ class OrchestratorRuntimeTests(unittest.TestCase):
 
             self.assertEqual(1, len(result.decisions))
             self.assertEqual(OrchestratorState.ON_BATTERY, state_manager.state)
-            self.assertEqual(1, result.decisions[0].local_results[0].accepted)
+            self.assertEqual([], result.decisions[0].local_results)
 
     def test_serve_runs_multiple_iterations_and_sleeps(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -132,6 +135,38 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             output = stream.getvalue()
             self.assertIn("runtime normalized_event=LOWBATT", output)
             self.assertIn("runtime shutdown_step name=shutdown_orchestrator", output)
+
+    def test_startup_reconcile_clears_committed_state_when_ups_is_online(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            commit_path = Path(temp_dir) / "shutdown.commit"
+            commit_path.write_text("committed\n", encoding="utf-8")
+            journal_path = Path(temp_dir) / "audit.jsonl"
+            config = ServerConfig()
+            config.nut_monitor.enabled = True
+            journal = AuditJournal(AuditJournalConfig(enabled=True, path=journal_path))
+            state_manager = OrchestratorStateManager(commit_path)
+
+            with patch("server.main.NUTUPSMonitor.read_snapshot", return_value=UPSStatusSnapshot(status_tokens=("OL",), battery_charge_percent=100, runtime_seconds=3600)):
+                _reconcile_startup_commit_state(config, state_manager, journal)
+
+            self.assertFalse(state_manager.committed)
+            self.assertEqual(OrchestratorState.NORMAL, state_manager.state)
+
+    def test_startup_reconcile_keeps_committed_state_when_ups_is_still_on_battery(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            commit_path = Path(temp_dir) / "shutdown.commit"
+            commit_path.write_text("committed\n", encoding="utf-8")
+            journal_path = Path(temp_dir) / "audit.jsonl"
+            config = ServerConfig()
+            config.nut_monitor.enabled = True
+            journal = AuditJournal(AuditJournalConfig(enabled=True, path=journal_path))
+            state_manager = OrchestratorStateManager(commit_path)
+
+            with patch("server.main.NUTUPSMonitor.read_snapshot", return_value=UPSStatusSnapshot(status_tokens=("OB",), battery_charge_percent=40, runtime_seconds=900)):
+                _reconcile_startup_commit_state(config, state_manager, journal)
+
+            self.assertTrue(state_manager.committed)
+            self.assertEqual(OrchestratorState.CRITICAL_SHUTDOWN, state_manager.state)
 
 
 if __name__ == "__main__":

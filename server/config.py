@@ -40,6 +40,9 @@ class NUTMonitorConfig:
 class LocalServerActionConfig:
     self_shutdown_enabled: bool = False
     self_shutdown_command: str = "sudo /sbin/shutdown -h now"
+    pre_shutdown_script_enabled: bool = False
+    pre_shutdown_script_path: str = "./scripts/pre-shutdown.sh"
+    pre_shutdown_script_timeout_seconds: float = 30.0
 
 
 @dataclass(slots=True)
@@ -167,6 +170,27 @@ class ServerConfig:
                 ),
                 self_shutdown_command=str(
                     local_section.get("self_shutdown_command", config.local_server_actions.self_shutdown_command)
+                ),
+                pre_shutdown_script_enabled=bool(
+                    local_section.get(
+                        "pre_shutdown_script_enabled",
+                        config.local_server_actions.pre_shutdown_script_enabled,
+                    )
+                ),
+                pre_shutdown_script_path=str(
+                    local_section.get(
+                        "pre_shutdown_script_path",
+                        config.local_server_actions.pre_shutdown_script_path,
+                    )
+                ),
+                pre_shutdown_script_timeout_seconds=max(
+                    1.0,
+                    float(
+                        local_section.get(
+                            "pre_shutdown_script_timeout_seconds",
+                            config.local_server_actions.pre_shutdown_script_timeout_seconds,
+                        )
+                    ),
                 ),
             ),
             critical_shutdown=CriticalShutdownConfig(
@@ -321,6 +345,15 @@ class ServerConfig:
         self_shutdown_command = os.getenv("UPS_ORCHESTRATOR_SERVER_SELF_SHUTDOWN_COMMAND")
         if self_shutdown_command is not None:
             config.local_server_actions.self_shutdown_command = self_shutdown_command
+        pre_shutdown_script_enabled = cls._env_bool("UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_ENABLED")
+        if pre_shutdown_script_enabled is not None:
+            config.local_server_actions.pre_shutdown_script_enabled = pre_shutdown_script_enabled
+        pre_shutdown_script_path = os.getenv("UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_PATH")
+        if pre_shutdown_script_path is not None:
+            config.local_server_actions.pre_shutdown_script_path = pre_shutdown_script_path
+        pre_shutdown_script_timeout_seconds = cls._env_float("UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_TIMEOUT_SECONDS")
+        if pre_shutdown_script_timeout_seconds is not None:
+            config.local_server_actions.pre_shutdown_script_timeout_seconds = max(1.0, pre_shutdown_script_timeout_seconds)
 
         include_windows_client_shutdown = cls._env_bool("UPS_ORCHESTRATOR_INCLUDE_WINDOWS_CLIENT_SHUTDOWN")
         if include_windows_client_shutdown is not None:

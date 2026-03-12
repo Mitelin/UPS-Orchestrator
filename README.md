@@ -10,6 +10,7 @@ This repository implements a UPS orchestration system with one central Linux ser
 - The UPS is connected to the Linux server.
 - The Windows Main PC runs a local HTTP client listener.
 - Linux-side devices such as Raspberry and NAS are currently controlled directly from the server over SSH.
+- The Linux server does not use a local eco mode anymore.
 - `LOWBATT` is treated as an irreversible commit point for the current runtime.
 
 ## Current architecture
@@ -64,11 +65,13 @@ This keeps the first deployment simpler and removes one whole moving part from t
 
 - file-backed orchestrator state machine with `NORMAL`, `ON_BATTERY`, and `CRITICAL_SHUTDOWN`
 - persistent shutdown commit marker so `LOWBATT` survives restarts as committed state
+- startup reconciliation clears the committed shutdown marker automatically after reboot only when the UPS is truly back `ONLINE`
 - NUT-compatible UPS polling through `upsc`
 - debounce for noisy power-state and low-battery transitions
 - policy engine for `ONBATT`, `ONLINE`, and `LOWBATT`
 - ordered remote shutdown for NAS and Raspberry
 - optional Windows dispatch during `ONBATT`, `ONLINE`, and `LOWBATT`
+- configurable pre-shutdown shell hook for custom app save/stop commands before server shutdown
 - structured dispatch retries for HTTP and SSH targets
 - long-running `serve` mode for real runtime polling
 - JSONL audit journal with CLI inspection
@@ -77,7 +80,9 @@ This keeps the first deployment simpler and removes one whole moving part from t
 
 - authenticated HTTP listener with `/healthz`, `/onbatt`, `/online`, and `/lowbatt`
 - local state tracking for eco mode and critical shutdown pending state
-- placeholder notification actions
+- real Windows notification execution via toast with `msg.exe` fallback when platform actions are enabled
+- eco mode support through `powercfg` power plan switching when platform actions are enabled
+- startup reconciliation restores the previously active Windows power plan after reboot if eco mode had been left active
 - optional LOWBATT shutdown countdown policy for the Main PC
 
 ### Linux-side targets
@@ -113,6 +118,30 @@ docs/              Protocol and supporting documents
 - `ONLINE` returns the system to normal only if critical shutdown is not already committed.
 - `LOWBATT` commits critical shutdown and becomes a point of no return for the current runtime.
 
+### Windows eco mode lifecycle
+
+The Windows client handles eco mode locally.
+
+1. `ONBATT` triggers a warning and can switch the active Windows power plan to the configured power saver scheme.
+2. The previously active power plan GUID is stored locally for later restoration.
+3. `ONLINE` restores the saved power plan if critical shutdown is not already pending.
+4. If the machine reboots while eco mode is still active, the client reconciles startup state and restores the saved plan on next start.
+
+This behavior is gated by `UPS_ORCHESTRATOR_WINDOWS_EXECUTE_PLATFORM_ACTIONS=true` so development and dry-run use stays safe by default.
+
+### Server custom pre-shutdown hook
+
+The Linux server can run a custom shell script just before its own shutdown.
+
+This is meant for application-specific cleanup that a normal OS shutdown might not handle in the right order, for example:
+
+- `save-all` for a game server
+- graceful stop of a custom daemon
+- database flush or snapshot trigger
+- vendor-specific service drain logic
+
+The hook is configured independently from the standard OS shutdown command and is intended to give the user full customization control.
+
 ### Ordered critical shutdown
 
 The current shutdown order is:
@@ -121,7 +150,8 @@ The current shutdown order is:
 2. NAS shutdown
 3. Raspberry shutdown
 4. optional Main PC shutdown
-5. Linux orchestrator self-shutdown
+5. server pre-shutdown custom script
+6. Linux orchestrator self-shutdown
 
 ## Configuration model
 
@@ -144,6 +174,7 @@ The codebase is ready for a first controlled deploy test in a home-lab environme
 What is already ready:
 
 - automated test coverage for server state transitions, UPS normalization, dispatching, runtime loop, config loading, Windows policy, and audit journal
+- automated coverage for Windows eco mode restore and server startup recovery after committed shutdown
 - bounded runtime mode for safe testing
 - `simulate` command for non-UPS-triggered event testing
 - `observe_only` support for non-destructive real UPS observation
@@ -177,6 +208,7 @@ What is still intentionally lightweight:
 - keep server self-shutdown disabled
 - test `simulate --event LOWBATT --dispatch`
 - verify NAS and Raspberry receive the expected SSH shutdown command in a controlled environment
+- verify the optional pre-shutdown script would run the expected custom save/stop commands
 
 ### Step 4: test real UPS polling with policy application
 
@@ -223,13 +255,59 @@ What is still intentionally lightweight:
 .\.venv\Scripts\python.exe -m server.main journal --journal-type policy_decision --limit 10
 ```
 
+## Windows eco mode configuration
+
+Important defaults:
+
+- Windows eco mode is optional.
+- Real platform actions are disabled unless explicitly enabled.
+- The client stores the previously active Windows power scheme in `.runtime/windows-client-power-scheme.txt` by default.
+
+Main environment variables:
+
+- `UPS_ORCHESTRATOR_WINDOWS_EXECUTE_PLATFORM_ACTIONS=true` enables real notifications, power plan switching, and shutdown command execution.
+- `UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_ENABLED=true` enables power plan switching logic.
+- `UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_POWER_SAVER_GUID` sets the target eco mode power scheme.
+- `UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_BALANCED_GUID` sets the default restore scheme if no previous plan was saved.
+- `UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_RESTORE_PATH` sets where the previous power scheme GUID is stored.
+
+## Server pre-shutdown hook configuration
+
+Main environment variables:
+
+- `UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_ENABLED=true` enables the custom hook.
+- `UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_PATH=./scripts/pre-shutdown.sh` sets the script location.
+- `UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_TIMEOUT_SECONDS=30` sets the execution timeout.
+
+The script runs before the server executes its final OS shutdown command.
+
+If `UPS_ORCHESTRATOR_SERVER_SELF_SHUTDOWN_ENABLED=false`, the hook is only planned and logged, not executed.
+
 ## Example Windows LOWBATT shutdown policy
 ```powershell
+$env:UPS_ORCHESTRATOR_WINDOWS_EXECUTE_PLATFORM_ACTIONS="true"
 $env:UPS_ORCHESTRATOR_WINDOWS_LOWBATT_SHUTDOWN_ENABLED="true"
 $env:UPS_ORCHESTRATOR_WINDOWS_LOWBATT_SHUTDOWN_DELAY_SECONDS="90"
 $env:UPS_ORCHESTRATOR_WINDOWS_SHUTDOWN_COMMAND="shutdown /s /t 90 /f"
 .\.venv\Scripts\python.exe -m client_windows.main serve --host 127.0.0.1 --port 8765 --token change-me
 ```
+
+## Example Windows warning and eco mode activation
+```powershell
+$env:UPS_ORCHESTRATOR_WINDOWS_EXECUTE_PLATFORM_ACTIONS="true"
+$env:UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_ENABLED="true"
+$env:UPS_ORCHESTRATOR_WINDOWS_NOTIFICATION_TITLE="UPS Orchestrator"
+.\.venv\Scripts\python.exe -m client_windows.main serve --host 127.0.0.1 --port 8765 --token change-me
+```
+
+## Example Windows eco mode recovery after reboot
+```powershell
+$env:UPS_ORCHESTRATOR_WINDOWS_EXECUTE_PLATFORM_ACTIONS="true"
+$env:UPS_ORCHESTRATOR_WINDOWS_ECO_MODE_ENABLED="true"
+.\.venv\Scripts\python.exe -m client_windows.main serve --host 127.0.0.1 --port 8765 --token change-me
+```
+
+When the client starts, it checks whether a saved power scheme restore file exists and, if it does, restores that scheme before serving requests.
 
 ## Example dispatch flow
 ```powershell
@@ -284,6 +362,35 @@ $env:UPS_ORCHESTRATOR_RASPBERRY_SHUTDOWN_DELAY_SECONDS="15"
 $env:UPS_ORCHESTRATOR_WINDOWS_SHUTDOWN_DELAY_SECONDS="30"
 $env:UPS_ORCHESTRATOR_SERVER_SHUTDOWN_DELAY_SECONDS="45"
 .\.venv\Scripts\python.exe -m server.main simulate --event LOWBATT --dispatch
+```
+
+## Example pre-shutdown custom app hook
+```powershell
+$env:UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_ENABLED="true"
+$env:UPS_ORCHESTRATOR_SERVER_PRE_SHUTDOWN_SCRIPT_PATH="./scripts/pre-shutdown.sh"
+.\.venv\Scripts\python.exe -m server.main simulate --event LOWBATT
+```
+
+Example use cases for the script:
+
+- send `save-all` to a game server console
+- flush a database or stop an app service in custom order
+- call vendor-specific cleanup commands before the normal OS shutdown
+
+See `scripts/pre-shutdown.sh.example` for a starter template.
+
+## Suggested validation commands
+
+### Targeted Windows eco mode tests
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_windows_policy
+```
+
+### Full regression suite
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
 ## Example NUT observe-only polling
