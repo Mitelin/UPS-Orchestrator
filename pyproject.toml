@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ups-orchestrator"
+version = "0.1.0"
+description = "Home-lab UPS power orchestration server and Windows client"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Mitelin" }
+]
+
+[project.scripts]
+ups-orchestrator-server = "server.main:main"
+ups-orchestrator-windows-client = "client_windows.main:main"
+
+[tool.setuptools]
+packages = ["client_windows", "server", "shared"]

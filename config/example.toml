@@ -1,0 +1,59 @@
+[server]
+node_name = "web-game-server"
+observe_only = true
+grace_period_seconds = 120
+commit_marker_path = ".runtime/shutdown.commit"
+log_level = "INFO"
+
+[dispatch_runtime]
+timeout_seconds = 5.0
+retry_attempts = 3
+retry_delay_seconds = 1.0
+poll_interval_seconds = 5.0
+
+[audit_journal]
+enabled = true
+path = ".runtime/audit-journal.jsonl"
+
+[windows_client]
+name = "main-pc"
+base_url = "http://192.168.1.50:8765"
+shared_token = "change-me"
+enabled = true
+
+[nut_monitor]
+enabled = true
+device_name = "ups@localhost"
+command = "upsc"
+low_battery_charge_percent = 20
+low_battery_runtime_seconds = 300
+power_state_debounce_polls = 2
+low_battery_debounce_polls = 2
+
+[local_server_actions]
+self_shutdown_enabled = false
+self_shutdown_command = "sudo /sbin/shutdown -h now"
+
+[critical_shutdown]
+include_windows_client_shutdown = false
+warning_delay_seconds = 0
+nas_shutdown_delay_seconds = 5
+raspberry_shutdown_delay_seconds = 15
+windows_shutdown_delay_seconds = 30
+server_shutdown_delay_seconds = 45
+
+[raspberry]
+name = "raspberry"
+host = "raspberry.local"
+user = "pi"
+port = 22
+shutdown_command = "sudo /sbin/shutdown -h now"
+enabled = true
+
+[nas]
+name = "nas"
+host = "nas.local"
+user = "admin"
+port = 22
+shutdown_command = "sudo /sbin/shutdown -h now"
+enabled = true
