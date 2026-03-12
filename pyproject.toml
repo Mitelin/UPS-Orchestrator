@@ -4,13 +4,32 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ups-orchestrator"
-version = "0.1.0"
-description = "Home-lab UPS power orchestration server and Windows client"
+version = "0.2.0"
+description = "UPS orchestration system with a Linux server, Windows client, NUT polling, SSH shutdown dispatch, and audit journaling"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
   { name = "Mitelin" }
 ]
+keywords = ["ups", "orchestration", "nut", "shutdown", "windows", "linux", "homelab"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: System Administrators",
+  "License :: Other/Proprietary License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Systems Administration",
+  "Topic :: System :: Power (UPS)",
+]
+
+[project.urls]
+Homepage = "https://github.com/Mitelin/UPS-Orchestrator"
+Repository = "https://github.com/Mitelin/UPS-Orchestrator"
+Documentation = "https://github.com/Mitelin/UPS-Orchestrator/blob/main/README.md"
 
 [project.scripts]
 ups-orchestrator-server = "server.main:main"
